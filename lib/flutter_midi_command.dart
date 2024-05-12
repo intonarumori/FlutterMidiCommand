@@ -152,6 +152,13 @@ class MidiCommand {
     return _platform.onMidiDataReceived;
   }
 
+  /// Stream firing events whenever a raw midi packet is received
+  ///
+  /// The event contains the raw bytes contained in the MIDI package
+  Stream<MidiPacket>? get onRawMidiDataReceived {
+    return _platform.onRawMidiDataReceived;
+  }
+
   /// Stream firing events whenever a change in the MIDI setup occurs
   ///
   /// For example, when a new BLE devices is discovered

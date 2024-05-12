@@ -47,6 +47,9 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
     var midiRXChannel:FlutterEventChannel?
     var rxStreamHandler = StreamHandler()
 
+    var midiRawRXChannel:FlutterEventChannel?
+    var rawRXStreamHandler = StreamHandler()
+
     var midiSetupChannel:FlutterEventChannel?
     var setupStreamHandler = StreamHandler()
 
@@ -89,11 +92,13 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
         // Stream setup
         #if os(macOS)
             midiRXChannel = FlutterEventChannel(name: "plugins.invisiblewrench.com/flutter_midi_command/rx_channel", binaryMessenger: registrar.messenger)
+            midiRawRXChannel = FlutterEventChannel(name: "plugins.invisiblewrench.com/flutter_midi_command/raw_rx_channel", binaryMessenger: registrar.messenger)
         #else
             midiRXChannel = FlutterEventChannel(name: "plugins.invisiblewrench.com/flutter_midi_command/rx_channel", binaryMessenger: registrar.messenger())
+            midiRawRXChannel = FlutterEventChannel(name: "plugins.invisiblewrench.com/flutter_midi_command/raw_rx_channel", binaryMessenger: registrar.messenger())
         #endif
         midiRXChannel?.setStreamHandler(rxStreamHandler)
-
+        midiRawRXChannel?.setStreamHandler(rawRXStreamHandler)
 
         #if os(macOS)
             midiSetupChannel = FlutterEventChannel(name: "plugins.invisiblewrench.com/flutter_midi_command/setup_channel", binaryMessenger: registrar.messenger)
@@ -148,7 +153,7 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
             device.name == name
         })
 
-        let result = existingDevice ?? ConnectedOwnVirtualDevice(name: name, streamHandler: rxStreamHandler, client: midiClient);
+        let result = existingDevice ?? ConnectedOwnVirtualDevice(name: name, streamHandler: rxStreamHandler, rawStreamHandler: rawRXStreamHandler, client: midiClient);
         if(existingDevice == nil){
             ownVirtualDevices.insert(result)
         }
@@ -235,7 +240,7 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
             break
         case "getDevices":
             let devices = getDevices()
-            print("--- devices ---\n\(devices)")
+            //print("--- devices ---\n\(devices)")
             result(devices)
             break
         case "connectToDevice":
@@ -332,7 +337,7 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
                 
         if type == "BLE" {
             if let periph = discoveredDevices.filter({ (p) -> Bool in p.identifier.uuidString == deviceId }).first {
-                let device = ConnectedBLEDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, result:ongoingConnections[deviceId], peripheral: periph, ports:ports)
+                let device = ConnectedBLEDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, rawStreamHandler: rawRXStreamHandler, result:ongoingConnections[deviceId], peripheral: periph, ports:ports)
                 connectedDevices[deviceId] = device
                 manager.stopScan()
                 manager.connect(periph, options: nil)
@@ -354,8 +359,8 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
             }
         } else // if type == "native" || if type == "virtual"
         {
-            let device = (type == "native" || type == "network") ? ConnectedNativeDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, client: midiClient, ports:ports)
-                : ConnectedVirtualDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, client: midiClient, ports:ports)
+            let device = (type == "native" || type == "network") ? ConnectedNativeDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, rawStreamHandler: rawRXStreamHandler, client: midiClient, ports:ports)
+                : ConnectedVirtualDevice(id: deviceId, type: type, streamHandler: rxStreamHandler, rawStreamHandler: rawRXStreamHandler, client: midiClient, ports:ports)
             print("connected to \(device) \(deviceId)")
             connectedDevices[deviceId] = device
             updateSetupState(data: "deviceConnected")
@@ -957,11 +962,13 @@ class Port {
     var id:String
     var deviceType:String
     var streamHandler : StreamHandler
+    var rawStreamHandler : StreamHandler
 
-    init(id:String, type:String, streamHandler:StreamHandler) {
+    init(id:String, type:String, streamHandler:StreamHandler, rawStreamHandler: StreamHandler) {
         self.id = id
         self.deviceType = type
         self.streamHandler = streamHandler
+        self.rawStreamHandler = rawStreamHandler
     }
 
     func openPorts() {}
@@ -981,7 +988,7 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
   var inSource : MIDIEndpointRef?
     var deviceInfo:Dictionary<String, String?>
 
-  init(id:String, type:String, streamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
+  init(id:String, type:String, streamHandler:StreamHandler, rawStreamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
     self.client = client
     self.ports = ports
 
@@ -991,27 +998,125 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
                     "type":type,
                     "connected": String(true),]
 
-    super.init(id: id, type: type, streamHandler: streamHandler)
+    super.init(id: id, type: type, streamHandler: streamHandler, rawStreamHandler: rawStreamHandler)
   }
 
   override func send(bytes: [UInt8], timestamp: UInt64?) {
+
     if let ep = outEndpoint {
-      let packetList = UnsafeMutablePointer<MIDIPacketList>.allocate(capacity: 1)
-      var packet = MIDIPacketListInit(packetList)
-      let time = timestamp ?? mach_absolute_time()
-      packet = MIDIPacketListAdd(packetList, 1024, packet, time, bytes.count, bytes)
+		
+		sendMessagesWithLimitedPacketListSize([bytes], endpoint: ep, timestamp: timestamp)
 
-      let status = MIDISend(outputPort, ep, packetList)
-      if(status != noErr){
-          print("Error \(status) while sending MIDI to virtual or physical destination")
-      }
-
-      //print("send bytes \(bytes) on port \(outputPort) \(ep) status \(status)")
-      packetList.deallocate()
+//      let packetList = UnsafeMutablePointer<MIDIPacketList>.allocate(capacity: 1)
+//      var packet = MIDIPacketListInit(packetList)
+//      let time = timestamp ?? mach_absolute_time()
+//		
+//		if let newPacket = SMWorkaroundMIDIPacketListAdd(packetList, 2048, packet, time, bytes.count, bytes) {
+//			packet = newPacket
+//		} else {
+//			print("could not add packet")
+//		}
+//
+//      let status = MIDISend(outputPort, ep, packetList)
+//      if(status != noErr){
+//          print("Error \(status) while sending MIDI to virtual or physical destination")
+//      }
+//
+//      //print("send bytes \(bytes) on port \(outputPort) \(ep) status \(status)")
+//      packetList.deallocate()
     } else {
       print("No MIDI destination for id \(name!)")
     }
   }
+	
+	// MARK: - Lifted from MIDIApps
+	
+	private let maxPacketListSize = 65536
+
+	private func sendMessagesWithLimitedPacketListSize(_ messages: [[UInt8]], endpoint: MIDIEndpointRef, timestamp: UInt64?) {
+			guard messages.count > 0 else { return }
+
+			var packetListData = Data(count: maxPacketListSize)
+			packetListData.withUnsafeMutableBytes { (packetListRawBufferPtr: UnsafeMutableRawBufferPointer) in
+				let packetListPtr = packetListRawBufferPtr.bindMemory(to: MIDIPacketList.self).baseAddress!
+
+				func attemptToAddPacket(_ packetPtr: UnsafeMutablePointer<MIDIPacket>, _ message: [UInt8], _ data: [UInt8]) -> UnsafeMutablePointer<MIDIPacket>? {
+					// Try to add a packet to the packet list, for the given message,
+					// with this data (either the message's fullData or a subrange).
+					// If successful, returns a non-nil pointer for the next packet.
+					// If unsuccessful, returns nil.
+					//let packetTimeStamp = ignoresTimeStamps ? SMGetCurrentHostTime() : message.hostTimeStamp
+					let packetTimeStamp = timestamp ?? mach_absolute_time()
+
+					return data.withUnsafeBytes {
+						return SMWorkaroundMIDIPacketListAdd(packetListPtr, maxPacketListSize, packetPtr, packetTimeStamp, data.count, $0.bindMemory(to: UInt8.self).baseAddress!)
+					}
+				}
+
+				func sendPacketList() -> UnsafeMutablePointer<MIDIPacket> {
+					// Send the current packet list, empty it, and return the next packet to fill in
+					send(packetListPtr, endpoint: endpoint)
+					return MIDIPacketListInit(packetListPtr)
+				}
+
+				var curPacketPtr = MIDIPacketListInit(packetListPtr)
+
+				for message in messages {
+					// Get the full data for the message (including first status byte)
+					let messageData = message
+					guard messageData.count > 0 else { continue }
+					var isOverlarge = false
+
+					// Attempt to add a packet with the full data into the current packet list
+					if let nextPacketPtr = attemptToAddPacket(curPacketPtr, message, messageData) {
+						// There was enough room in the packet list
+						curPacketPtr = nextPacketPtr
+					}
+					else if packetListPtr.pointee.numPackets > 0 {
+						// There was not enough room in the packet list.
+						// Send the outstanding packet list, clear it, and try again.
+						curPacketPtr = sendPacketList()
+
+						if let nextPacketPtr = attemptToAddPacket(curPacketPtr, message, messageData) {
+							// There was enough room in the packet list
+							curPacketPtr = nextPacketPtr
+						}
+						else {
+							isOverlarge = true  // This message will never fit
+						}
+					}
+					else {
+						isOverlarge = true  // This message will never fit
+					}
+
+					if isOverlarge {
+						// This is a large message (in practice, it's sysex, but we don't assume that here).
+						// We send it by filling in the packet list with one packet with as much data as possible,
+						// sending that packet list, then repeating with the remaining data.
+						let chunkSize = maxPacketListSize - MemoryLayout.offset(of: \MIDIPacketList.packet.data)!
+						for chunkStart in stride(from: messageData.startIndex, to: messageData.endIndex, by: chunkSize) {
+							let chunkData = Array(messageData[chunkStart ..< min(chunkStart + chunkSize, messageData.endIndex)])
+
+							if attemptToAddPacket(curPacketPtr, message, chunkData) == nil {
+								fatalError("Couldn't add packet for overlarge message -- logic error")
+							}
+							curPacketPtr = sendPacketList()
+						}
+					}
+				}
+
+				// All messages have been processed. Send the last remaining packet list.
+				if packetListPtr.pointee.numPackets > 0 {
+					send(packetListPtr, endpoint: endpoint)
+				}
+			}
+		}
+	
+	private func send(_ packetListPtr: UnsafePointer<MIDIPacketList>, endpoint: MIDIEndpointRef) {
+		MIDISend(outputPort, endpoint, packetListPtr)
+	}
+	
+	// MARK: -
 
   override func close() {
     // We did not create the endpoint so we should not dispose it.
@@ -1034,6 +1139,8 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
     let packet:MIDIPacket = packets.packet
     var ap = buffer;
     buffer.initialize(to:packet)
+
+    //print("FlutterMIDICommand", "packets \(packets.numPackets)")
 
     for _ in 0 ..< packets.numPackets {
       let p = ap.pointee
@@ -1059,12 +1166,17 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
     var statusByte:UInt8 = 0
 
     func parseData(data:Data, timestamp:UInt64) {
+
+        DispatchQueue.main.async {
+            self.rawStreamHandler.send(data: ["data": data, "timestamp":timestamp, "device":self.deviceInfo] as [String:Any])
+        }
+
+        //print("FlutterMIDICommand", "parseData \(data.map { String(format: "%02x", $0) }.joined(separator: " "))")
+
         if (data.count > 0) {
           for i in 0...data.count-1 {
             let midiByte:UInt8 = data[i]
             let midiInt = midiByte & 0xFF
-
-//          Log.d("FlutterMIDICommand", "parserState $parserState byte $midiByte")
 
             switch (parserState) {
             case PARSER_STATE.HEADER:
@@ -1156,8 +1268,8 @@ class ConnectedNativeDevice : ConnectedVirtualOrNativeDevice {
     var entity : MIDIEntityRef?
 
 
-  override init(id:String, type:String, streamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
-       super.init(id:id, type: type, streamHandler: streamHandler, client: client, ports: ports)
+  override init(id:String, type:String, streamHandler:StreamHandler, rawStreamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
+       super.init(id:id, type: type, streamHandler: streamHandler, rawStreamHandler: rawStreamHandler, client: client, ports: ports)
 
         self.ports = ports
         let idParts = id.split(separator: ":")
@@ -1266,6 +1378,7 @@ class ConnectedNativeDevice : ConnectedVirtualOrNativeDevice {
         }
 
 //        print("tb \(tb) timestamp \(timestampFactor)")
+        //print("FlutterMIDICommand", "packets \(packets.numPackets)")
 
         for _ in 0 ..< packets.numPackets {
             let p = ap.pointee
@@ -1282,9 +1395,9 @@ class ConnectedNativeDevice : ConnectedVirtualOrNativeDevice {
 
 class ConnectedVirtualDevice : ConnectedVirtualOrNativeDevice {
 
-  override init(id:String, type:String, streamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
+  override init(id:String, type:String, streamHandler:StreamHandler, rawStreamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
 
-    super.init(id:id, type: type, streamHandler: streamHandler, client: client, ports: ports)
+    super.init(id:id, type: type, streamHandler: streamHandler, rawStreamHandler: rawStreamHandler, client: client, ports: ports)
 
     let idParts = id.split(separator: ":")
     assert(idParts.count > 0);
@@ -1313,10 +1426,10 @@ class ConnectedVirtualDevice : ConnectedVirtualOrNativeDevice {
 }
 
 class ConnectedOwnVirtualDevice : ConnectedVirtualOrNativeDevice {
-    init(name: String, streamHandler:StreamHandler, client: MIDIClientRef) {
+    init(name: String, streamHandler:StreamHandler, rawStreamHandler:StreamHandler, client: MIDIClientRef) {
         self.deviceName = name
         self.midiClient = client
-        super.init(id: String(stringToId(str: name)), type: "own-virtual", streamHandler: streamHandler, client: client, ports: [])
+        super.init(id: String(stringToId(str: name)), type: "own-virtual", streamHandler: streamHandler, rawStreamHandler: rawStreamHandler, client: client, ports: [])
         initVirtualSource()
         initVirtualDestination()
         self.name = name
@@ -1493,10 +1606,10 @@ class ConnectedBLEDevice : ConnectedDevice, CBPeripheralDelegate {
     var setupStream : StreamHandler?
     var connectResult : FlutterResult?
 
-    init(id:String, type:String, streamHandler:StreamHandler, result:FlutterResult?, peripheral:CBPeripheral, ports:[Port]?) {
+    init(id:String, type:String, streamHandler:StreamHandler, rawStreamHandler:StreamHandler, result:FlutterResult?, peripheral:CBPeripheral, ports:[Port]?) {
         self.peripheral = peripheral
         self.connectResult = result
-        super.init(id: id, type: type, streamHandler: streamHandler)
+        super.init(id: id, type: type, streamHandler: streamHandler, rawStreamHandler: rawStreamHandler)
     }
 
     func setupBLE(stream: StreamHandler) {

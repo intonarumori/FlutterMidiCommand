@@ -34,6 +34,7 @@ class FlutterMidiCommandPlugin : FlutterPlugin, ActivityAware, MethodCallHandler
   private var connectedDevices = mutableMapOf<String, Device>()
 
   lateinit var rxChannel:EventChannel
+  lateinit var rawRXChannel:EventChannel
   lateinit var setupChannel:EventChannel
   lateinit var setupStreamHandler:FMCStreamHandler
   lateinit var bluetoothStateChannel:EventChannel
@@ -117,6 +118,7 @@ class FlutterMidiCommandPlugin : FlutterPlugin, ActivityAware, MethodCallHandler
     }
 
     lateinit var rxStreamHandler:FMCStreamHandler
+    lateinit var rawRXStreamHandler:FMCStreamHandler
   }
 
 
@@ -133,6 +135,10 @@ class FlutterMidiCommandPlugin : FlutterPlugin, ActivityAware, MethodCallHandler
     rxStreamHandler = FMCStreamHandler(handler)
     rxChannel = EventChannel(messenger, "plugins.invisiblewrench.com/flutter_midi_command/rx_channel")
     rxChannel.setStreamHandler( rxStreamHandler )
+
+    rawRXStreamHandler = FMCStreamHandler(handler)
+    rawRXChannel = EventChannel(messenger, "plugins.invisiblewrench.com/flutter_midi_command/raw_rx_channel")
+    rawRXChannel.setStreamHandler( rawRXStreamHandler )
 
     setupStreamHandler = FMCStreamHandler(handler)
     setupChannel = EventChannel(messenger, "plugins.invisiblewrench.com/flutter_midi_command/setup_channel")
