@@ -314,6 +314,40 @@ public class SwiftFlutterMidiCommandPlugin: NSObject, CBCentralManagerDelegate, 
             #else
                 result(nil)
             #endif
+
+        case "enableRawMidiDataReceiving":
+            guard let arguments = call.arguments as? Dictionary<String, Any> else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not parse arguments", details: call.arguments))
+                return
+            }
+            guard let deviceId = arguments["deviceId"] as? String else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not find `deviceId` in arguments", details: call.arguments))
+                return
+            }
+            guard let enabled = arguments["enabled"] as? Bool else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not find `enabled` in arguments", details: call.arguments))
+                return
+            }
+            guard let device = connectedDevices[deviceId] else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not find device with `deviceId", details: call.arguments))
+                return
+            }
+            device.isRawMidiDataReceivingEnabled = enabled
+
+        case "getRawMidiDataReceivingEnabled":
+            guard let arguments = call.arguments as? Dictionary<String, Any> else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not parse arguments", details: call.arguments))
+                return
+            }
+            guard let deviceId = arguments["deviceId"] as? String else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not find `deviceId` in arguments", details: call.arguments))
+                return
+            }
+            guard let device = connectedDevices[deviceId] else {
+                result(FlutterError.init(code: "MESSAGEERROR", message: "Could not find device with `deviceId", details: call.arguments))
+                return
+            }
+            result(device.isRawMidiDataReceivingEnabled)
                     
         default:
             result(FlutterMethodNotImplemented)
@@ -957,11 +991,13 @@ class Port {
     var id:String
     var deviceType:String
     var streamHandler : StreamHandler
+    var isRawMidiDataReceivingEnabled: Bool
 
     init(id:String, type:String, streamHandler:StreamHandler) {
         self.id = id
         self.deviceType = type
         self.streamHandler = streamHandler
+        self.isRawMidiDataReceivingEnabled = false
     }
 
     func openPorts() {}
@@ -979,7 +1015,7 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
   var name : String?
   var outEndpoint : MIDIEndpointRef?
   var inSource : MIDIEndpointRef?
-    var deviceInfo:Dictionary<String, String?>
+  var deviceInfo:Dictionary<String, String?>
 
   init(id:String, type:String, streamHandler:StreamHandler, client: MIDIClientRef, ports:[Port]?) {
     self.client = client
@@ -1040,7 +1076,7 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
       var tmp = p.data
       let data = Data(bytes: &tmp, count: Int(p.length))
       let timestamp = p.timeStamp
-        parseData(data: data, timestamp: timestamp)
+      parseData(data: data, timestamp: timestamp)
       ap = MIDIPacketNext(ap)
     }
   }
@@ -1060,6 +1096,18 @@ class ConnectedVirtualOrNativeDevice : ConnectedDevice {
 
     func parseData(data:Data, timestamp:UInt64) {
         if (data.count > 0) {
+          if isRawMidiDataReceivingEnabled {
+            midiBuffer.removeAll()
+            data.withUnsafeBytes { bufferPointer in
+               midiBuffer.append(contentsOf: bufferPointer)
+            }
+            let midiData = ["data": midiBuffer, "timestamp":timestamp, "device":deviceInfo] as [String : Any]
+            DispatchQueue.main.async {
+                self.streamHandler.send(data: midiData)
+            }
+            return
+          }
+
           for i in 0...data.count-1 {
             let midiByte:UInt8 = data[i]
             let midiInt = midiByte & 0xFF
