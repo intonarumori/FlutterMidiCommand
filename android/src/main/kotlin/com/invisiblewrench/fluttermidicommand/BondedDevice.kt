@@ -53,6 +53,10 @@ class BondedDevice  : Device {
 
     }
 
+    override fun selectInputPort(portNumber: Int) {}
+    
+    override fun selectOutputPort(portNumber: Int) {}
+
     override fun close() {
 
 

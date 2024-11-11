@@ -21,6 +21,10 @@ abstract class Device {
 
     abstract fun send(data: ByteArray, timestamp: Long?)
 
+    abstract fun selectInputPort(portNumber: Int)
+
+    abstract fun selectOutputPort(portNumber: Int)
+
     abstract fun close()
 
     companion object {

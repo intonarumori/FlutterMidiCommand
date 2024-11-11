@@ -132,6 +132,14 @@ class MidiCommand {
     _platform.disconnectDevice(device);
   }
 
+  Future<void> selectInputPort(MidiDevice device, int portNumber) async {
+    return _platform.selectInputPort(device, portNumber);
+  }
+
+  Future<void> selectOutputPort(MidiDevice device, int portNumber) async {
+    return _platform.selectOutputPort(device, portNumber);
+  }
+
   /// Disconnects from all devices
   void teardown() {
     _platform.teardown();

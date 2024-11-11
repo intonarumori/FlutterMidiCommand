@@ -202,6 +202,22 @@ class FlutterMidiCommandPlugin : FlutterPlugin, ActivityAware, MethodCallHandler
         args?.get("id")?.let { disconnectDevice(it.toString()) }
         result.success(null)
       }
+      "selectInputPort" -> {
+        var args = call.arguments<Map<String, Any>>()
+        var deviceId = args?.get("deviceId") as String
+        var portNumber = args?.get("portNumber") as Int
+        Log.d("selectInputPort", "Device:$deviceId port:$portNumber")
+        connectedDevices[deviceId]?.selectInputPort(portNumber)
+        result.success(null)
+      }
+      "selectOutputPort" -> {
+        var args = call.arguments<Map<String, Any>>()
+        var deviceId = args?.get("deviceId") as String
+        var portNumber = args?.get("portNumber") as Int
+        Log.d("selectOutputPort", "Device:$deviceId port:$portNumber")
+        connectedDevices[deviceId]?.selectOutputPort(portNumber)
+        result.success(null)
+      }
       "teardown" -> {
         teardown()
         result.success(null)

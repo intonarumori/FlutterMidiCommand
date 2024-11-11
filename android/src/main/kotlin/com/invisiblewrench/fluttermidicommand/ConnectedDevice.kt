@@ -53,6 +53,32 @@ class ConnectedDevice : Device {
         }, 2500)
     }
 
+    override fun selectInputPort(portNumber: Int) {
+        if (this.inputPort != null) {
+            this.inputPort?.close();
+            this.inputPort = null;
+        }
+        this.midiDevice.info?.let {
+            if (it.inputPortCount > 0 && portNumber < it.inputPortCount) {
+                Log.d("FlutterMIDICommand", "Open input port")
+                this.inputPort = this.midiDevice.openInputPort(portNumber)
+            }
+        }
+    }
+
+    override fun selectOutputPort(portNumber: Int) {
+        if (this.outputPort != null) {
+            this.outputPort?.close();
+            this.outputPort = null;
+        }
+        this.midiDevice.info?.let {
+            if (it.outputPortCount > 0 && portNumber < it.outputPortCount) {
+                Log.d("FlutterMIDICommand", "Open output port")
+                this.outputPort = this.midiDevice.openOutputPort(portNumber)
+            }
+        }
+    }
+
 //    fun openPorts(ports: List<Port>) {
 //      this.midiDevice.info?.let { deviceInfo ->
 //        Log.d("FlutterMIDICommand","inputPorts ${deviceInfo.inputPortCount} outputPorts ${deviceInfo.outputPortCount}")
