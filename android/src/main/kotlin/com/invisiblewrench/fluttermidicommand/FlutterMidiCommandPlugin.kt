@@ -222,6 +222,36 @@ class FlutterMidiCommandPlugin : FlutterPlugin, ActivityAware, MethodCallHandler
       "enableNetworkSession" -> {
         result.success(null)
       }
+      "enableRawMidiDataReceiving" -> {
+        var args = call.arguments<Map<String, Any>>()
+        var deviceId = args?.get("deviceId") as String
+        var enabled = args?.get("enabled") as Boolean
+        if (deviceId == null || enabled == null) {
+          result.error("ERROR", "deviceId or enabled flag missing", null)
+          return
+        }
+        var device = connectedDevices[deviceId]
+        if (device == null) {
+          result.error("ERROR", "device not found for deviceId", null)
+          return
+        }
+        device.isRawMidiDataReceivingEnabled = enabled
+        result.success(null)
+      }
+      "getRawMidiDataReceivingEnabled" -> {
+        var args = call.arguments<Map<String, Any>>()
+        var deviceId = args?.get("deviceId") as String
+        if (deviceId == null) {
+          result.error("ERROR", "deviceId missing", null)
+          return;
+        }
+        var device = connectedDevices[deviceId]
+        if (device == null) {
+          result.error("ERROR", "device not found for deviceId", null)
+          return
+        }
+        result.success(device.isRawMidiDataReceivingEnabled)
+      }
 
       else -> {
         result.notImplemented()

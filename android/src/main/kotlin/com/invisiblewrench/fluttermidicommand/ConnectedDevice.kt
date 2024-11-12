@@ -10,6 +10,12 @@ class ConnectedDevice : Device {
     var inputPort: MidiInputPort? = null
     var outputPort: MidiOutputPort? = null
 
+    override var isRawMidiDataReceivingEnabled: Boolean = false
+        set(value) {
+            (this.receiver as RXReceiver)?.isRawMidiDataReceivingEnabled = value
+            field = value
+        }
+
     private var isOwnVirtualDevice = false;
 
     constructor(device:MidiDevice, setupStreamHandler: FMCStreamHandler) : super(deviceIdForInfo(device.info), device.info.type.toString()) {
@@ -116,6 +122,7 @@ class ConnectedDevice : Device {
         val stream = stream
         var isBluetoothDevice = device.info.type == MidiDeviceInfo.TYPE_BLUETOOTH
         val deviceInfo = mapOf("id" to if(isBluetoothDevice) device.info.properties.get(MidiDeviceInfo.PROPERTY_BLUETOOTH_DEVICE).toString() else device.info.id.toString(), "name" to device.info.properties.getString(MidiDeviceInfo.PROPERTY_NAME), "type" to if(isBluetoothDevice) "BLE" else "native")
+        var isRawMidiDataReceivingEnabled: Boolean = false
 
         // MIDI parsing
         enum class PARSER_STATE
@@ -138,6 +145,15 @@ class ConnectedDevice : Device {
 //        Log.d("FlutterMIDICommand", "data sliced $data offset $offset count $count")
 
                 if (data.size > 0) {
+                    if (isRawMidiDataReceivingEnabled) {
+                        midiBuffer.clear()
+                        for (i in 0 until data.size) {
+                            midiBuffer.add(data[i])
+                        }
+                        stream.send( mapOf("data" to midiBuffer.toList(), "timestamp" to timestamp, "device" to deviceInfo))
+                        return
+                    }
+
                     for (i in 0 until data.size) {
                         var midiByte: Byte = data[i]
                         var midiInt = midiByte.toInt() and 0xFF
