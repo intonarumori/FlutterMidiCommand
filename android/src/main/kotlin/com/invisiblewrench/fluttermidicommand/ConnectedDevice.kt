@@ -12,7 +12,9 @@ class ConnectedDevice : Device {
 
     override var isRawMidiDataReceivingEnabled: Boolean = false
         set(value) {
-            (this.receiver as RXReceiver)?.isRawMidiDataReceivingEnabled = value
+            if (this.receiver != null) {
+                (this.receiver as RXReceiver)?.isRawMidiDataReceivingEnabled = value
+            }
             field = value
         }
 
@@ -31,6 +33,7 @@ class ConnectedDevice : Device {
             Log.d("FlutterMIDICommand","inputPorts ${it.inputPortCount} outputPorts ${it.outputPortCount}")
 
             this.receiver = RXReceiver(streamHandler, this.midiDevice)
+            (this.receiver as RXReceiver).isRawMidiDataReceivingEnabled = isRawMidiDataReceivingEnabled
 //
 //        it.ports.forEach {
 //          Log.d("FlutterMIDICommand", "${it.name} ${it.type} ${it.portNumber}")
@@ -42,12 +45,12 @@ class ConnectedDevice : Device {
                 isOwnVirtualDevice = true
             } else {
                 if (it.inputPortCount > 0) {
-                    Log.d("FlutterMIDICommand", "Open input port")
+                    Log.d("FlutterMIDICommand", "Open input port: 0")
                     this.inputPort = this.midiDevice.openInputPort(0)
                 }
             }
             if (it.outputPortCount > 0) {
-                Log.d("FlutterMIDICommand", "Open output port")
+                Log.d("FlutterMIDICommand", "Open output port: 0")
                 this.outputPort = this.midiDevice.openOutputPort(0)
                 this.outputPort?.connect(this.receiver)
             }
@@ -57,6 +60,34 @@ class ConnectedDevice : Device {
             connectResult?.success(null)
             setupStreamHandler?.send("deviceConnected")
         }, 2500)
+    }
+
+    override fun selectInputPort(portNumber: Int) {
+        if (this.inputPort != null) {
+            this.inputPort?.close();
+            this.inputPort = null;
+        }
+        this.midiDevice.info?.let {
+            if (it.inputPortCount > 0 && portNumber < it.inputPortCount) {
+                Log.d("FlutterMIDICommand", "Open input port: $portNumber")
+                this.inputPort = this.midiDevice.openInputPort(portNumber)
+            }
+        }
+    }
+
+    override fun selectOutputPort(portNumber: Int) {
+        if (this.outputPort != null) {
+            this.outputPort?.disconnect(receiver)
+            this.outputPort?.close();
+            this.outputPort = null;
+        }
+        this.midiDevice.info?.let {
+            if (it.outputPortCount > 0 && portNumber < it.outputPortCount) {
+                Log.d("FlutterMIDICommand", "Open output port: $portNumber")
+                this.outputPort = this.midiDevice.openOutputPort(portNumber)
+                this.outputPort?.connect(this.receiver)
+            }
+        }
     }
 
 //    fun openPorts(ports: List<Port>) {
