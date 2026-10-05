@@ -11,12 +11,11 @@ abstract class Device {
     lateinit var midiDevice: MidiDevice
     protected var receiver:MidiReceiver? = null
     protected var setupStreamHandler: FMCStreamHandler? = null
-    public open var isRawMidiDataReceivingEnabled: Boolean
+    public open var isRawMidiDataReceivingEnabled: Boolean = false
 
     constructor(id: String, type: String) {
         this.id = id
         this.type = type
-        this.isRawMidiDataReceivingEnabled = false
     }
 
     abstract fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult:Result?)
